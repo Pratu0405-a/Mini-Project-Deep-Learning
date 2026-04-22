@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image Processing for Object Highlighting using OpenCV</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --glass: rgba(255,255,255,0.08);
+    --glass-border: rgba(255,255,255,0.18);
+    --glass-hover: rgba(255,255,255,0.14);
+    --accent: #00e5ff;
+    --accent2: #7c4dff;
+    --accent3: #69ff47;
+    --text: #e8f0fe;
+    --muted: rgba(255,255,255,0.55);
+    --blur: blur(18px);
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Exo 2', sans-serif;
+    background: #040a1a;
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── animated mesh background ── */
+  .bg {
+    position: fixed; inset: 0; z-index: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 10%, rgba(0,229,255,0.13) 0%, transparent 70%),
+      radial-gradient(ellipse 60% 50% at 80% 80%, rgba(124,77,255,0.15) 0%, transparent 65%),
+      radial-gradient(ellipse 50% 40% at 50% 50%, rgba(105,255,71,0.06) 0%, transparent 70%),
+      #040a1a;
+    animation: bgShift 12s ease-in-out infinite alternate;
+  }
+  @keyframes bgShift {
+    0%   { filter: hue-rotate(0deg); }
+    100% { filter: hue-rotate(20deg); }
+  }
+
+  .orb {
+    position: fixed; border-radius: 50%;
+    filter: blur(80px); opacity: 0.25; pointer-events: none; z-index: 0;
+    animation: float 10s ease-in-out infinite alternate;
+  }
+  .orb1 { width: 500px; height: 500px; background: var(--accent);  top: -150px; left: -100px; }
+  .orb2 { width: 400px; height: 400px; background: var(--accent2); bottom: -100px; right: -80px; animation-delay: -5s; }
+  .orb3 { width: 300px; height: 300px; background: var(--accent3); top: 40%; left: 60%; animation-delay: -3s; }
+  @keyframes float {
+    0%   { transform: translate(0,0) scale(1); }
+    100% { transform: translate(30px, 40px) scale(1.08); }
+  }
+
+  /* ── grid lines overlay ── */
+  .grid-lines {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+
+  /* ── layout ── */
+  main { position: relative; z-index: 1; }
+
+  section { padding: 80px 24px; max-width: 1100px; margin: 0 auto; }
+
+  /* ── glass card ── */
+  .glass {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: var(--blur);
+    -webkit-backdrop-filter: var(--blur);
+    border-radius: 20px;
+  }
+  .glass:hover { background: var(--glass-hover); }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 40px;
+    background: rgba(4,10,26,0.6);
+    border-bottom: 1px solid var(--glass-border);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+  .nav-logo {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px; font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .nav-links { display: flex; gap: 28px; }
+  .nav-links a {
+    font-size: 13px; color: var(--muted);
+    text-decoration: none; letter-spacing: 0.05em;
+    transition: color 0.2s;
+  }
+  .nav-links a:hover { color: var(--accent); }
+
+  /* ── HERO ── */
+  #hero {
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    padding-top: 100px;
+  }
+  .hero-tag {
+    font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 20px;
+    border: 1px solid rgba(0,229,255,0.3);
+    padding: 6px 18px; border-radius: 99px;
+    background: rgba(0,229,255,0.07);
+  }
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(28px, 5vw, 58px);
+    font-weight: 900;
+    line-height: 1.15;
+    margin-bottom: 24px;
+    background: linear-gradient(135deg, #fff 30%, var(--accent) 70%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero-sub {
+    max-width: 620px;
+    font-size: 16px; line-height: 1.8;
+    color: var(--muted);
+    margin-bottom: 40px;
+  }
+  .hero-btns { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+  .btn {
+    padding: 13px 32px; border-radius: 12px;
+    font-family: 'Exo 2', sans-serif;
+    font-size: 14px; font-weight: 600;
+    cursor: pointer; border: none;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 8px;
+    transition: transform 0.18s, box-shadow 0.18s;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff;
+    box-shadow: 0 0 24px rgba(0,229,255,0.25);
+  }
+  .btn-primary:hover { box-shadow: 0 0 40px rgba(0,229,255,0.4); }
+  .btn-ghost {
+    background: var(--glass); border: 1px solid var(--glass-border);
+    color: var(--text);
+    backdrop-filter: var(--blur);
+  }
+
+  /* ── SECTION HEADING ── */
+  .sec-label {
+    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 10px;
+  }
+  .sec-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(20px, 3vw, 32px); font-weight: 700;
+    margin-bottom: 16px;
+  }
+  .sec-desc { color: var(--muted); font-size: 15px; line-height: 1.8; max-width: 680px; }
+
+  /* ── ABOUT CARDS ── */
+  .about-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-top: 40px; }
+  .about-card {
+    padding: 28px 24px;
+    border-radius: 18px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: var(--blur);
+    transition: transform 0.2s, border-color 0.2s;
+  }
+  .about-card:hover { transform: translateY(-4px); border-color: var(--accent); }
+  .card-icon { font-size: 28px; margin-bottom: 14px; }
+  .card-title { font-family: 'Orbitron', sans-serif; font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 8px; letter-spacing: 0.06em; }
+  .card-text { font-size: 13px; color: var(--muted); line-height: 1.7; }
+
+  /* ── PIPELINE ── */
+  .pipeline { display: flex; flex-wrap: wrap; gap: 0; margin-top: 40px; align-items: stretch; }
+  .pipe-step {
+    flex: 1; min-width: 140px;
+    padding: 24px 20px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: var(--blur);
+    text-align: center;
+    position: relative;
+    transition: background 0.2s;
+  }
+  .pipe-step:first-child { border-radius: 16px 0 0 16px; }
+  .pipe-step:last-child  { border-radius: 0 16px 16px 0; }
+  .pipe-step:not(:last-child)::after {
+    content: '→';
+    position: absolute; right: -14px; top: 50%; transform: translateY(-50%);
+    color: var(--accent); font-size: 18px; z-index: 2;
+  }
+  .pipe-num { font-family: 'Orbitron', sans-serif; font-size: 11px; color: var(--accent); margin-bottom: 8px; }
+  .pipe-name { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+  .pipe-desc { font-size: 11px; color: var(--muted); line-height: 1.6; }
+
+  /* ── DEMO SECTION ── */
+  #demo-section { padding: 80px 24px; }
+  .demo-wrapper { max-width: 1000px; margin: 0 auto; }
+  .demo-box {
+    padding: 36px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: var(--blur);
+    border-radius: 24px;
+    margin-top: 36px;
+  }
+
+  /* upload zone */
+  #drop-zone {
+    border: 2px dashed rgba(0,229,255,0.35);
+    border-radius: 16px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s;
+    background: rgba(0,229,255,0.03);
+  }
+  #drop-zone:hover, #drop-zone.drag-over {
+    background: rgba(0,229,255,0.07);
+    border-color: var(--accent);
+    box-shadow: 0 0 30px rgba(0,229,255,0.12);
+  }
+  #file-input { display: none; }
+  .upload-icon { font-size: 40px; margin-bottom: 12px; }
+  .upload-title { font-family: 'Orbitron', sans-serif; font-size: 14px; color: var(--accent); margin-bottom: 6px; }
+  .upload-hint { font-size: 12px; color: var(--muted); }
+
+  /* controls */
+  .controls-row {
+    display: flex; flex-wrap: wrap; gap: 20px;
+    align-items: flex-end; margin: 24px 0;
+  }
+  .ctrl { flex: 1; min-width: 160px; }
+  .ctrl label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 8px; letter-spacing: 0.05em; }
+  select, input[type=range] {
+    width: 100%; background: rgba(255,255,255,0.06);
+    border: 1px solid var(--glass-border);
+    color: var(--text); border-radius: 10px;
+    padding: 10px 14px; font-family: 'Exo 2', sans-serif;
+    font-size: 13px; outline: none; cursor: pointer;
+    appearance: none;
+  }
+  select:focus { border-color: var(--accent); }
+  input[type=range] { padding: 6px 0; accent-color: var(--accent); }
+  input[type=color] {
+    width: 100%; height: 42px;
+    border: 1px solid var(--glass-border);
+    border-radius: 10px; cursor: pointer;
+    background: none; padding: 3px;
+  }
+  /*.btn-process {
+    padding: 12px 28px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff; font-family: 'Exo 2', sans-serif;
+    font-size: 14px; font-weight: 600;
+    border: none; cursor: pointer;
+    box-shadow: 0 0 20px rgba(0,229,255,0.2);
+    transition: box-shadow 0.2s, transform 0.18s;
+    white-space: nowrap;
+  }
+  .btn-process:hover { box-shadow: 0 0 36px rgba(0,229,255,0.4); transform: translateY(-2px); }
+*/
+  /* canvases */
+  .canvas-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 16px; }
+  .canvas-card {
+    border-radius: 14px;
+    border: 1px solid var(--glass-border);
+    overflow: hidden;
+    background: rgba(0,0,0,0.3);
+  }
+  .canvas-label {
+    padding: 10px 16px;
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--accent); border-bottom: 1px solid var(--glass-border);
+    font-family: 'Orbitron', sans-serif; font-weight: 400;
+  }
+  canvas { display: block; width: 100%; background: #111; }
+
+  /* stats */
+  .stats-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-top: 20px; }
+  .stat {
+    padding: 16px; border-radius: 12px;
+    background: rgba(0,229,255,0.05);
+    border: 1px solid rgba(0,229,255,0.15);
+    text-align: center;
+  }
+  .stat-val { font-family: 'Orbitron', sans-serif; font-size: 20px; color: var(--accent); }
+  .stat-name { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  #dl-btn {
+    display: none; margin-top: 20px; width: 100%;
+    padding: 14px; border-radius: 12px;
+    background: rgba(105,255,71,0.1);
+    border: 1px solid rgba(105,255,71,0.3);
+    color: var(--accent3); font-family: 'Orbitron', sans-serif;
+    font-size: 13px; cursor: pointer; letter-spacing: 0.08em;
+    transition: all 0.2s;
+  }
+  #dl-btn:hover { background: rgba(105,255,71,0.18); box-shadow: 0 0 20px rgba(105,255,71,0.2); }
+  #status-msg { font-size: 13px; color: var(--muted); margin-top: 10px; text-align: center; min-height: 20px; }
+
+  /* ── HOW IT WORKS ── */
+  .how-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: 20px; margin-top: 36px; }
+  .how-card {
+    padding: 28px 24px; border-radius: 18px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: var(--blur);
+    transition: transform 0.2s, border-color 0.2s;
+  }
+  .how-card:hover { transform: translateY(-4px); border-color: var(--accent2); }
+  .how-num { font-family: 'Orbitron', sans-serif; font-size: 32px; color: rgba(0,229,255,0.18); font-weight: 900; line-height: 1; margin-bottom: 12px; }
+  .how-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .how-text { font-size: 13px; color: var(--muted); line-height: 1.7; }
+
+  /* ── CODE SNIPPET ── */
+  .code-block {
+    margin-top: 36px; border-radius: 18px; overflow: hidden;
+    border: 1px solid var(--glass-border);
+    background: rgba(0,0,0,0.5); backdrop-filter: blur(10px);
+  }
+  .code-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 20px; background: rgba(255,255,255,0.04);
+    border-bottom: 1px solid var(--glass-border);
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot-r { background: #ff5f57; }
+  .dot-y { background: #febc2e; }
+  .dot-g { background: #28c840; }
+  .code-file { margin-left: auto; font-size: 11px; color: var(--muted); letter-spacing: 0.08em; }
+  pre {
+    padding: 24px; font-size: 13px; line-height: 1.8;
+    font-family: 'Courier New', monospace;
+    overflow-x: auto; color: #cdd9e5;
+  }
+  .kw  { color: #ff79c6; }
+  .fn  { color: #8be9fd; }
+  .cm  { color: #6272a4; font-style: italic; }
+  .st  { color: #f1fa8c; }
+  .nm  { color: #bd93f9; }
+
+  /* ── TEAM / FOOTER ── */
+  footer {
+    position: relative; z-index: 1;
+    padding: 80px 24px 40px;
+    border-top: 1px solid var(--glass-border);
+    background: rgba(4,10,26,0.7);
+    backdrop-filter: blur(20px);
+    text-align: center;
+  }
+  .footer-title { font-family: 'Orbitron', sans-serif; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--accent); margin-bottom: 36px; }
+  .team-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin-bottom: 40px; }
+  .team-card {
+    padding: 20px 28px; border-radius: 16px;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: var(--blur);
+    min-width: 160px; transition: border-color 0.2s, transform 0.2s;
+  }
+  .team-card:hover { border-color: var(--accent); transform: translateY(-3px); }
+  .team-avatar {
+    width: 48px; height: 48px; border-radius: 50%;
+    margin: 0 auto 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Orbitron', sans-serif; font-size: 15px; font-weight: 700;
+    border: 1px solid var(--glass-border);
+  }
+  .av1 { background: rgba(0,229,255,0.15); color: var(--accent); }
+  .av2 { background: rgba(124,77,255,0.15); color: var(--accent2); }
+  .av3 { background: rgba(105,255,71,0.15); color: var(--accent3); }
+  .team-name { font-size: 14px; font-weight: 600; }
+  .team-role { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .guide-card {
+    display: inline-block; padding: 20px 36px;
+    border-radius: 16px; margin-bottom: 36px;
+    background: rgba(124,77,255,0.08);
+    border: 1px solid rgba(124,77,255,0.25);
+  }
+  .guide-label { font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--accent2); margin-bottom: 8px; }
+  .guide-name { font-size: 18px; font-weight: 600; }
+  .guide-inst { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  .footer-inst {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px; letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.2); margin-top: 24px;
+  }
+  .footer-copy { font-size: 12px; color: rgba(255,255,255,0.2); margin-top: 12px; }
+
+  /* ── responsive ── */
+  @media(max-width:640px) {
+    nav { padding: 14px 20px; }
+    .nav-links { display: none; }
+    .pipeline { flex-direction: column; }
+    .pipe-step:first-child { border-radius: 16px 16px 0 0; }
+    .pipe-step:last-child  { border-radius: 0 0 16px 16px; }
+    .pipe-step:not(:last-child)::after { content: '↓'; right: 50%; top: auto; bottom: -14px; transform: translateX(50%); }
+    .canvas-row { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg"></div>
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="orb orb3"></div>
+<div class="grid-lines"></div>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">OpenCV &#9670; Highlight</div>
+  <div class="nav-links">
+    <a href="#about">About</a>
+    <a href="#demo-section">Demo</a>
+    <a href="#how">How It Works</a>
+    <a href="#code">Code</a>
+    <a href="#team">Team</a>
+  </div>
+</nav>
+
+<main>
+
+  <!-- HERO -->
+  <section id="hero">
+    <div class="hero-tag">Mini Project &#9670; 2025–26</div>
+    <h1>Image Processing<br>for Object Highlighting<br>using OpenCV</h1>
+    <p class="hero-sub">
+      A computer vision system that intelligently identifies and highlights specific objects within digital images using grayscale conversion, thresholding, and masking — preserving the original background untouched.
+    </p>
+    <div class="hero-btns">
+      <a href="#demo-section" class="btn btn-primary">&#9654; Try the Live Demo</a>
+      <a href="#how" class="btn btn-ghost">&#8595; How It Works</a>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section id="about">
+    <div class="sec-label">&#9670; Overview</div>
+    <div class="sec-title">What This Project Does</div>
+    <p class="sec-desc">
+      This project applies fundamental image processing techniques to identify and highlight specific regions within a digital image using Python and OpenCV. It demonstrates how classical computer vision methods can achieve precise object segmentation without the complexity of deep learning.
+    </p>
+    <div class="about-grid">
+      <div class="about-card">
+        <div class="card-icon">&#127774;</div>
+        <div class="card-title">Grayscale Conversion</div>
+        <div class="card-text">Reduces computational complexity by eliminating color data while preserving intensity variations crucial for detection.</div>
+      </div>
+      <div class="about-card">
+        <div class="card-icon">&#9680;</div>
+        <div class="card-title">Binary Thresholding</div>
+        <div class="card-text">Separates foreground objects from background by classifying each pixel based on its intensity value against a threshold.</div>
+      </div>
+      <div class="about-card">
+        <div class="card-icon">&#127912;</div>
+        <div class="card-title">Selective Masking</div>
+        <div class="card-text">Applies color only to the detected object region, leaving the background completely unchanged and intact.</div>
+      </div>
+      <div class="about-card">
+        <div class="card-icon">&#128202;</div>
+        <div class="card-title">Side-by-Side Visualization</div>
+        <div class="card-text">Uses Matplotlib to display original and processed images together for clear before-and-after comparison.</div>
+      </div>
+    </div>
+
+    <!-- pipeline -->
+    <div style="margin-top:52px;">
+      <div class="sec-label" style="margin-bottom:20px;">&#9670; Processing Pipeline</div>
+      <div class="pipeline">
+        <div class="pipe-step">
+          <div class="pipe-num">01</div>
+          <div class="pipe-name">Input Image</div>
+          <div class="pipe-desc">Load image from file system</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-num">02</div>
+          <div class="pipe-name">Grayscale</div>
+          <div class="pipe-desc">BGR → Gray conversion</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-num">03</div>
+          <div class="pipe-name">Threshold</div>
+          <div class="pipe-desc">Create binary mask</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-num">04</div>
+          <div class="pipe-name">Invert Mask</div>
+          <div class="pipe-desc">Target dark object pixels</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-num">05</div>
+          <div class="pipe-name">Colorize</div>
+          <div class="pipe-desc">Apply color to object only</div>
+        </div>
+        <div class="pipe-step">
+          <div class="pipe-num">06</div>
+          <div class="pipe-name">Output</div>
+          <div class="pipe-desc">Save processed image</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEMO -->
+  <section id="demo-section" style="max-width:1000px;">
+    <div class="sec-label">&#9670; Interactive Demo</div>
+    <div class="sec-title">Try It Yourself</div>
+    <p class="sec-desc">Upload a white-background line art image (like the apple). The system will detect the dark object outlines and color only the object — not the background.</p>
+
+    <div class="demo-box">
+
+      <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="upload-icon">&#128247;</div>
+        <div class="upload-title">Drop Image Here or Click to Upload</div>
+        <div class="upload-hint">PNG / JPG — Best with white background line art images</div>
+        <input type="file" id="file-input" accept="image/*">
+      </div>
+
+      <div id="ctrl-area" style="display:none;">
+        <div class="controls-row">
+          <div class="ctrl">
+            <label>Object Type / Color</label>
+            <select id="obj-type">
+              <option value="apple">&#127822; Apple — Red</option>
+              <option value="leaf">&#127810; Leaf — Green</option>
+              <option value="sky">&#9729; Sky — Blue</option>
+              <option value="banana">&#127820; Banana — Yellow</option>
+              <option value="flower">&#127846; Flower — Pink</option>
+              <option value="custom">&#127912; Custom Color</option>
+            </select>
+          </div>
+          <div class="ctrl">
+            <label>Threshold: <span id="thresh-display">80</span></label>
+            <input type="range" id="threshold" min="30" max="200" value="80" step="1">
+          </div>
+          <div class="ctrl" id="custom-ctrl" style="display:none;">
+            <label>Pick Color</label>
+            <input type="color" id="custom-color" value="#ff0000">
+          </div>
+          <div class="ctrl" style="flex:0;">
+            <label style="visibility:hidden;">x</label>
+            
+          </div>
+        </div>
+
+        <div class="canvas-row">
+          <div class="canvas-card">
+            <div class="canvas-label">&#9632; Original</div>
+            <canvas id="orig-canvas"></canvas>
+          </div>
+          <div class="canvas-card">
+            <div class="canvas-label" id="out-label">&#9632; Object Highlighted</div>
+            <canvas id="out-canvas"></canvas>
+          </div>
+        </div>
+
+        <div class="stats-row" id="stats-row" style="display:none;">
+          <div class="stat">
+            <div class="stat-val" id="s-pixels">—</div>
+            <div class="stat-name">Object Pixels</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="s-pct">—</div>
+            <div class="stat-name">Coverage %</div>
+          </div>
+          <div class="stat">
+            <div class="stat-val" id="s-thresh">80</div>
+            <div class="stat-name">Threshold</div>
+          </div>
+        </div>
+
+        <div id="status-msg"></div>
+        <button id="dl-btn" onclick="downloadOutput()">&#8595; Download Output Image</button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section id="how">
+    <div class="sec-label">&#9670; Methodology</div>
+    <div class="sec-title">How It Works</div>
+    <p class="sec-desc">The system uses three classical image processing techniques working in sequence to achieve accurate object-only coloring.</p>
+    <div class="how-grid">
+      <div class="how-card">
+        <div class="how-num">01</div>
+        <div class="how-title">Grayscale Conversion</div>
+        <div class="how-text">The input color image is converted to grayscale using the luminosity formula: Gray = 0.299R + 0.587G + 0.114B. This reduces a 3-channel image to a single channel, simplifying further processing.</div>
+      </div>
+      <div class="how-card">
+        <div class="how-num">02</div>
+        <div class="how-title">Binary Thresholding</div>
+        <div class="how-text">A global threshold is applied to the grayscale image. Pixels below the threshold (dark object regions) become black in the mask; pixels above (white background) become white — creating a clean binary mask.</div>
+      </div>
+      <div class="how-card">
+        <div class="how-num">03</div>
+        <div class="how-title">Mask Inversion & Coloring</div>
+        <div class="how-text">The binary mask is inverted to isolate the object. The chosen color is applied only where the inverted mask is active (the object pixels), while background pixels remain untouched from the original image.</div>
+      </div>
+      <div class="how-card">
+        <div class="how-num">04</div>
+        <div class="how-title">Result Visualization</div>
+        <div class="how-text">The original and processed images are displayed side-by-side using Matplotlib for comparison. The final output is saved as a JPEG file for further use in analysis or documentation.</div>
+      </div>
+    </div>
+
+    <!-- applications -->
+    <div style="margin-top:48px;">
+      <div class="sec-label" style="margin-bottom:20px;">&#9670; Real-World Applications</div>
+      <div class="about-grid">
+        <div class="about-card">
+          <div class="card-icon">&#129657;</div>
+          <div class="card-title">Medical Imaging</div>
+          <div class="card-text">Highlighting tumors, lesions, or abnormal regions in CT scans and MRI images for diagnostic purposes.</div>
+        </div>
+        <div class="about-card">
+          <div class="card-icon">&#128247;</div>
+          <div class="card-title">Surveillance</div>
+          <div class="card-text">Detecting and marking moving objects or persons of interest in security camera footage.</div>
+        </div>
+        <div class="about-card">
+          <div class="card-icon">&#128295;</div>
+          <div class="card-title">Industrial Inspection</div>
+          <div class="card-text">Automatically identifying defects or anomalies on manufactured products during quality control.</div>
+        </div>
+        
+      </div>
+    </div>
+  </section>
+
+  <!-- CODE -->
+  <section id="code">
+    <div class="sec-label">&#9670; Implementation</div>
+    <div class="sec-title">Core Python Code</div>
+    <p class="sec-desc">Built with Python in Google Colab using OpenCV, NumPy, and Matplotlib. The complete implementation is concise and efficient.</p>
+
+    <div class="code-block">
+      <div class="code-header">
+        <div class="dot dot-r"></div>
+        <div class="dot dot-y"></div>
+        <div class="dot dot-g"></div>
+        <div class="code-file">object_highlight.py</div>
+      </div>
+<pre><span class="kw">import</span> cv2
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">import</span> matplotlib.pyplot <span class="kw">as</span> plt
+<span class="kw">from</span> google.colab <span class="kw">import</span> files
+
+<span class="cm"># Upload image via Colab interface</span>
+uploaded = files.<span class="fn">upload</span>()
+image_name = <span class="fn">list</span>(uploaded.<span class="fn">keys</span>())[<span class="nm">0</span>]
+
+<span class="cm"># Read and convert color spaces</span>
+img = cv2.<span class="fn">imread</span>(image_name)
+gray = cv2.<span class="fn">cvtColor</span>(img, cv2.COLOR_BGR2GRAY)
+
+<span class="cm"># Apply threshold — creates binary mask</span>
+_, mask = cv2.<span class="fn">threshold</span>(gray, <span class="nm">120</span>, <span class="nm">255</span>, cv2.THRESH_BINARY)
+
+<span class="cm"># Invert mask to target dark object pixels</span>
+mask_inv = cv2.<span class="fn">bitwise_not</span>(mask)
+
+<span class="cm"># Copy original and colorize only the object region</span>
+colorized = img.<span class="fn">copy</span>()
+colorized[mask_inv == <span class="nm">255</span>] = [<span class="nm">0</span>, <span class="nm">0</span>, <span class="nm">255</span>]  <span class="cm"># Red in BGR</span>
+
+<span class="cm"># Display side-by-side comparison</span>
+plt.<span class="fn">figure</span>(figsize=(<span class="nm">10</span>, <span class="nm">5</span>))
+plt.<span class="fn">subplot</span>(<span class="nm">1</span>, <span class="nm">2</span>, <span class="nm">1</span>); plt.<span class="fn">title</span>(<span class="st">"Original"</span>)
+plt.<span class="fn">imshow</span>(cv2.<span class="fn">cvtColor</span>(img, cv2.COLOR_BGR2RGB))
+plt.<span class="fn">axis</span>(<span class="st">"off"</span>)
+plt.<span class="fn">subplot</span>(<span class="nm">1</span>, <span class="nm">2</span>, <span class="nm">2</span>); plt.<span class="fn">title</span>(<span class="st">"Object Highlighted"</span>)
+plt.<span class="fn">imshow</span>(cv2.<span class="fn">cvtColor</span>(colorized, cv2.COLOR_BGR2RGB))
+plt.<span class="fn">axis</span>(<span class="st">"off"</span>)
+plt.<span class="fn">show</span>()
+
+<span class="cm"># Save output</span>
+cv2.<span class="fn">imwrite</span>(<span class="st">"output.jpg"</span>, colorized)
+<span class="fn">print</span>(<span class="st">"Saved as output.jpg ✅"</span>)
+</pre>
+    </div>
+
+    <!-- requirements -->
+    <div style="margin-top:28px; display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+      <div class="about-card">
+        <div class="card-title">&#128187; Hardware Requirements</div>
+        <div class="card-text" style="margin-top:10px; line-height:2;">
+          &#9670; Computer / Laptop<br>
+          &#9670; Minimum 4 GB RAM<br>
+          &#9670; Internet (for Colab)
+        </div>
+      </div>
+      <div class="about-card">
+        <div class="card-title">&#9881; Software Requirements</div>
+        <div class="card-text" style="margin-top:10px; line-height:2;">
+          &#9670; Python 3.x<br>
+          &#9670; Google Colab / Jupyter<br>
+          &#9670; OpenCV · NumPy · Matplotlib
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- FOOTER / TEAM -->
+<footer id="team">
+  <div class="footer-title">&#9670; Project Team &#9670;</div>
+
+  <div class="team-grid">
+    <div class="team-card">
+      <div class="team-avatar av1">PA</div>
+      <div class="team-name">Pratiksha Alhat</div>
+      <div class="team-role">BEA02 · BE Computer Engg</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar av2">AB</div>
+      <div class="team-name">Aishwarya Borse</div>
+      <div class="team-role">BEA09 · BE  Computer Engg</div>
+    </div>
+    <div class="team-card">
+      <div class="team-avatar av3">RB</div>
+      <div class="team-name">Rohan Bhujbal</div>
+      <div class="team-role">BEA07 · BE Computer Engg</div>
+    </div>
+  </div>
+
+  <div class="guide-card">
+    <div class="guide-label">Under the Guidance of</div>
+    <div class="guide-name">Prof. Yamini Warke</div>
+    <div class="guide-inst">Internal Guide · Dept. of Computer Engineering (MMIT)</div>
+  </div>
+
+  <div style="border-top:1px solid var(--glass-border); padding-top:28px; margin-top: 8px;">
+    <div class="footer-inst">
+      Marathwada Mitra Mandal's Institute of Technology (MMIT)<br>
+      Lohgaon, Pune – 411 047 
+    </div>
+    <div class="footer-copy">
+      Department of Computer Engineering · 2025–26 · Mini Project Deep Learning
+    </div>
+  </div>
+</footer>
+
+<script>
+const colorMap = {
+  apple:  { r:200, g:30,  b:30,  label:'Apple — Red'     },
+  leaf:   { r:30,  g:160, b:40,  label:'Leaf — Green'    },
+  sky:    { r:30,  g:120, b:220, label:'Sky — Blue'      },
+  banana: { r:230, g:190, b:15,  label:'Banana — Yellow' },
+  flower: { r:210, g:60,  b:140, label:'Flower — Pink'   },
+  custom: { r:255, g:0,   b:0,   label:'Custom Color'    },
+};
+
+let srcData = null, W = 0, H = 0;
+const origCanvas = document.getElementById('orig-canvas');
+const outCanvas  = document.getElementById('out-canvas');
+const origCtx    = origCanvas.getContext('2d');
+const outCtx     = outCanvas.getContext('2d');
+
+// drag & drop
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag-over'); loadFile(e.dataTransfer.files[0]); });
+document.getElementById('file-input').addEventListener('change', e => loadFile(e.target.files[0]));
+
+document.getElementById('obj-type').addEventListener('change', function() {
+  document.getElementById('custom-ctrl').style.display = this.value === 'custom' ? '' : 'none';
+  if (srcData) processImage();
+});
+document.getElementById('threshold').addEventListener('input', function() {
+  document.getElementById('thresh-display').textContent = this.value;
+  if (srcData) processImage();
+});
+document.getElementById('custom-color').addEventListener('input', () => { if (srcData) processImage(); });
+
+function loadFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  document.getElementById('status-msg').textContent = 'Loading…';
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      W = img.width; H = img.height;
+      origCanvas.width = outCanvas.width = W;
+      origCanvas.height = outCanvas.height = H;
+      origCtx.drawImage(img, 0, 0);
+      srcData = origCtx.getImageData(0, 0, W, H);
+      document.getElementById('ctrl-area').style.display = '';
+      document.getElementById('status-msg').textContent = '';
+      processImage();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function getColor() {
+  const t = document.getElementById('obj-type').value;
+  if (t === 'custom') {
+    const hex = document.getElementById('custom-color').value;
+    return { r: parseInt(hex.slice(1,3),16), g: parseInt(hex.slice(3,5),16), b: parseInt(hex.slice(5,7),16), label: 'Custom Color' };
+  }
+  return colorMap[t];
+}
+
+function processImage() {
+  const thresh = parseInt(document.getElementById('threshold').value);
+  const col = getColor();
+  const src = srcData.data;
+  const out = outCtx.createImageData(W, H);
+  const d = out.data;
+  let objPx = 0;
+
+  for (let i = 0; i < src.length; i += 4) {
+    const r = src[i], g = src[i+1], b = src[i+2], a = src[i+3];
+    // grayscale
+    const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    // binary threshold — dark pixels = object (below thresh)
+    if (gray < thresh) {
+      // object pixel → colorize
+      d[i]   = col.r;
+      d[i+1] = col.g;
+      d[i+2] = col.b;
+      d[i+3] = 255;
+      objPx++;
+    } else {
+      // background → keep original (make it white/light)
+      d[i]   = r;
+      d[i+1] = g;
+      d[i+2] = b;
+      d[i+3] = a;
+    }
+  }
+
+  outCtx.putImageData(out, 0, 0);
+
+  const total = W * H;
+  document.getElementById('s-pixels').textContent  = objPx.toLocaleString();
+  document.getElementById('s-pct').textContent      = ((objPx / total) * 100).toFixed(1) + '%';
+  document.getElementById('s-thresh').textContent   = thresh;
+  document.getElementById('stats-row').style.display = '';
+  document.getElementById('out-label').textContent   = '◾ ' + col.label + ' — Object Only';
+  document.getElementById('dl-btn').style.display    = 'block';
+  document.getElementById('status-msg').textContent  = '✅ Done! Only the object is colored, background is untouched.';
+}
+
+function downloadOutput() {
+  const a = document.createElement('a');
+  a.href = outCanvas.toDataURL('image/jpeg', 0.95);
+  a.download = 'object_highlighted.jpg';
+  a.click();
+}
+</script>
+</body>
+</html>
